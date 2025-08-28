@@ -1,0 +1,278 @@
+<%- include('partials/header'); -%>
+
+
+<h1 class="title">Programuotojai API</h1>
+<nav>
+    <button onClick="showSearch()">Ieškoti programuotojo</button>
+    <button onClick="showAddForm()">Įdėti programuotoją</button>
+</nav>
+<div id="homepage">
+    <h2>Surask programuotoją šalia savęs!</h2>
+    <div id="devs"></div>
+    <div id="add-form"></div>
+
+</div>
+
+<script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+<script src="https://unpkg.com/react@15/dist/react.js"></script>
+<script src="https://unpkg.com/react-dom@15/dist/react-dom.min.js"></script>
+
+<!-- Create React Component -->
+<script type="text/babel">
+    var Devs = React.createClass({
+        getInitialState: function(){
+            return {
+                devs: [],
+                lat: '',
+                lng: ''
+            };
+        },
+
+        render: function() {
+            var devs = this.state.devs;
+            devs = devs.map((dev, index) => {
+                return (
+                    <li key={index}>
+                        <span className={dev.laisvas ? 'free' : 'busy'}></span>
+                        <span className="name">{dev.vardas}</span>
+                        <span className="rank">{dev.tech.join(', ')}</span>
+                        <span className="dist">{Math.floor(dev.distance / 1000)} km</span>
+                        <button onClick={() => this.handleEdit(dev)}>Redaguoti</button>
+                        <button onClick={() => this.handleDelete(dev._id)}>Ištrinti</button>
+                    </li>
+                );
+            });
+
+            return (
+                <div id="dev-container">
+                    <form id="search" onSubmit={this.handleSubmit}>
+                        <label>Ilguma:</label>
+                        <input type="number" ref="lng" placeholder="ilguma" required />
+                        <label>Platuma:</label>
+                        <input type="number" ref="lat" placeholder="platuma" required />
+                        <input type="submit" value="Rasti programuotojus" />
+                    </form>
+                    <ul>{devs}</ul>
+                </div>
+            );
+        },
+
+
+        handleSubmit: function(e) {
+            if (e) e.preventDefault(); // jei kviečiama be event – nesugrius
+
+            var lng = this.refs.lng ? this.refs.lng.value : this.state.lng;
+            var lat = this.refs.lat ? this.refs.lat.value : this.state.lat;
+
+            if (!lng || !lat) return;
+
+            // išsaugom
+            this.setState({ lng, lat });
+
+            fetch('/api/programuotojai/?lng=' + lng + '&lat=' + lat)
+                .then(response => {
+                    if (!response.ok) throw new Error('Network error');
+                    return response.json();
+                })
+                .then(json => {
+                    this.setState({ devs: json });
+                })
+                .catch(err => console.error('Fetch klaida:', err));
+        },
+
+
+        handleDelete: function(id) {
+            if (!confirm('Ar tikrai ištrinti programuotoją?')) return;
+
+            fetch(`/api/programuotojai/${id}`, {
+                method: 'DELETE'
+            })
+            .then(res => res.json())
+            .then(result => {
+                alert('Programuotojas ištrintas!');
+                // atnaujinti sąrašą
+                this.setState(prevState => ({
+                    devs: prevState.devs.filter(dev => dev._id !== id)
+                }));
+            })
+            .catch(err => {
+                console.error(err);
+                alert('Klaida šalinant programuotoją');
+            });
+        },
+
+        handleEdit: function(dev) {
+            ReactDOM.unmountComponentAtNode(document.getElementById('add-form'));
+            ReactDOM.render(<EditDevForm dev={dev} onSuccess={this.handleSubmit} />, document.getElementById('add-form'));
+        },
+
+
+    });
+    ReactDOM.render(<Devs />, document.getElementById('devs'));
+    // Komponentas pridėti naują programuotoją
+    var AddDevForm = React.createClass({
+        getInitialState: function() {
+            return {
+                vardas: '',
+                tech: '',
+                laisvas: true,
+                lng: '',
+                lat: ''
+            };
+        },
+        handleChange: function(e) {
+            this.setState({ [e.target.name]: e.target.value });
+        },
+        handleCheckbox: function(e) {
+            this.setState({ laisvas: e.target.checked });
+        },
+        handleSubmit: function(e) {
+            e.preventDefault();
+            const { vardas, tech, laisvas, lng, lat } = this.state;
+
+            fetch('/api/programuotojai', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    vardas,
+                    tech: tech.split(',').map(t => t.trim()), // paverčia į masyvą
+                    laisvas,
+                    location: {
+                        type: "Point",
+                        coordinates: [parseFloat(lng), parseFloat(lat)]
+                    }
+
+                })
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert('Programuotojas pridėtas!');
+                console.log(data);
+                // Gali išvalyti formą ar pereiti į sąrašą
+            })
+            .catch(err => {
+                console.error(err);
+                alert('Nepavyko pridėti programuotojo');
+            });
+        },
+        render: function() {
+            return (
+                <form onSubmit={this.handleSubmit}>
+                    <h3>Įdėti programuotoją</h3>
+                    <input type="text" name="vardas" placeholder="Vardas" value={this.state.vardas} onChange={this.handleChange} required />
+                    <input type="text" name="tech" placeholder="Technologijos (pvz. JavaScript, Node.js)" value={this.state.tech} onChange={this.handleChange} required />
+                    <label>
+                        Laisvas? <input type="checkbox" checked={this.state.laisvas} onChange={this.handleCheckbox} />
+                    </label>
+                    <input type="number" name="lng" placeholder="Ilguma" value={this.state.lng} onChange={this.handleChange} required />
+                    <input type="number" name="lat" placeholder="Platuma" value={this.state.lat} onChange={this.handleChange} required />
+                    <input type="submit" value="Pridėti programuotoją" />
+                </form>
+            );
+        }
+    });
+    // Komponentas redaguoti programuotoją
+    var EditDevForm = React.createClass({
+        getInitialState: function() {
+            return {
+                vardas: this.props.dev.vardas,
+                tech: this.props.dev.tech.join(', '),
+                laisvas: this.props.dev.laisvas,
+                lng: this.props.dev.location.coordinates[0],
+                lat: this.props.dev.location.coordinates[1]
+            };
+        },
+        handleChange: function(e) {
+            this.setState({ [e.target.name]: e.target.value });
+        },
+        handleCheckbox: function(e) {
+            this.setState({ laisvas: e.target.checked });
+        },
+        handleSubmit: function(e) {
+            e.preventDefault();
+            const { vardas, tech, laisvas, lng, lat } = this.state;
+
+            const lngNum = parseFloat(lng);
+            const latNum = parseFloat(lat);
+
+            if (isNaN(lngNum) || isNaN(latNum)) {
+                alert('Bloga ilguma arba platuma');
+                return;
+            }
+
+            fetch(`/api/programuotojai/${this.props.dev._id}`, {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    vardas,
+                    tech: tech.split(',').map(t => t.trim()),
+                    laisvas,
+                    location: {
+                        type: "Point",
+                        coordinates: [lngNum, latNum]
+                    }
+                })
+            })
+            .then(async res => {
+                if (!res.ok) {
+                    const errorText = await res.text();
+                    throw new Error('Klaida serveryje: ' + errorText);
+                }
+                return res.json(); // tik jei viskas OK
+            })
+            .then(data => {
+                alert('Programuotojas atnaujintas!');
+
+                // Uždarom formą
+                ReactDOM.unmountComponentAtNode(document.getElementById('add-form'));
+
+                // Atnaujinam sąrašą (tėvinis komponentas)
+                if (this.props.onSuccess) this.props.onSuccess();
+            })
+            .catch(err => {
+                console.error('Klaida PUT metu:', err);
+                alert('Klaida atnaujinant programuotoją.');
+            });
+
+        },
+
+        render: function() {
+            return (
+                <form onSubmit={this.handleSubmit}>
+                    <h3>Redaguoti programuotoją</h3>
+                    <input type="text" name="vardas" placeholder="Vardas" value={this.state.vardas} onChange={this.handleChange} required />
+                    <input type="text" name="tech" placeholder="Technologijos" value={this.state.tech} onChange={this.handleChange} required />
+                    <label>
+                        Laisvas? <input type="checkbox" checked={this.state.laisvas} onChange={this.handleCheckbox} />
+                    </label>
+                    <input type="number" name="lng" placeholder="Ilguma" value={this.state.lng} onChange={this.handleChange} required />
+                    <input type="number" name="lat" placeholder="Platuma" value={this.state.lat} onChange={this.handleChange} required />
+                    <input type="submit" value="Atnaujinti" />
+                </form>
+            );
+        }
+    });
+
+
+</script>
+<script type="text/babel">
+    function showSearch() {
+        ReactDOM.render(<Devs />, document.getElementById('devs'));
+        ReactDOM.unmountComponentAtNode(document.getElementById('add-form'));
+    }
+
+    function showAddForm() {
+        ReactDOM.unmountComponentAtNode(document.getElementById('devs'));
+        ReactDOM.render(<AddDevForm />, document.getElementById('add-form'));
+    }
+
+    // Automatiškai parodyti paiešką pirmą kartą
+    showSearch();
+</script>
+
+
+<%- include('partials/footer'); -%>
